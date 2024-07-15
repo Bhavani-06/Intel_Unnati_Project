@@ -1,0 +1,122 @@
+#install libraries
+
+pip install opencv-python tensorflow numpy scipy scikit-learn
+
+#main code
+
+import os
+import cv2
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, LSTM, TimeDistributed, Dropout
+from tensorflow.keras.optimizers import Adam
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# Set seed for reproducibility
+np.random.seed(42)
+tf.random.set_seed(42)
+
+# Function to extract frames from video
+def extract_frames(video_path, output_folder):
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    cap = cv2.VideoCapture(video_path)
+    count = 0
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame_path = os.path.join(output_folder, f'frame_{count:04d}.jpg')
+        cv2.imwrite(frame_path, frame)
+        count += 1
+    cap.release()
+
+# Example usage: extract frames from a video
+video_path = 'path/to/video.mp4'
+output_folder = 'output_frames'
+extract_frames(video_path, output_folder)
+
+# Function to preprocess frames
+def preprocess_frame(frame):
+    frame = cv2.resize(frame, (224, 224))
+    frame = frame / 255.0
+    return frame
+
+# Load and preprocess dataset
+def load_and_preprocess_data(data_folder):
+    X, y = [], []
+    for frame_file in sorted(os.listdir(data_folder)):
+        if frame_file.endswith('.jpg'):
+            frame_path = os.path.join(data_folder, frame_file)
+            frame = cv2.imread(frame_path)
+            frame = preprocess_frame(frame)
+            X.append(frame)
+            # Assuming labels are stored in corresponding .npy files
+            label_file = frame_file.replace('.jpg', '.npy')
+            label_path = os.path.join(data_folder, label_file)
+            if os.path.exists(label_path):
+                label = np.load(label_path)
+                y.append(label)
+    return np.array(X), np.array(y)
+
+# Load data
+X, y = load_and_preprocess_data(output_folder)
+
+# Data augmentation
+datagen = ImageDataGenerator(
+    rotation_range=10,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    shear_range=0.1,
+    zoom_range=0.1,
+    horizontal_flip=True,
+    fill_mode='nearest'
+)
+
+# Example train-test split
+X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, random_state=42)
+X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
+
+# Define the model
+def build_model(input_shape):
+    model = Sequential([
+        TimeDistributed(Conv2D(32, (3, 3), activation='relu'), input_shape=input_shape),
+        TimeDistributed(MaxPooling2D((2, 2))),
+        TimeDistributed(Conv2D(64, (3, 3), activation='relu')),
+        TimeDistributed(MaxPooling2D((2, 2))),
+        TimeDistributed(Flatten()),
+        LSTM(50, return_sequences=True),
+        Dropout(0.5),
+        LSTM(50),
+        Dense(2, activation='linear')  # Output layer for heart rate and respiratory rate
+    ])
+    return model
+
+input_shape = (None, 224, 224, 3)  # (timesteps, height, width, channels)
+model = build_model(input_shape)
+model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error', metrics=['mae'])
+
+# Model summary
+model.summary()
+
+# Train the model
+history = model.fit(X_train, y_train, epochs=50, batch_size=8, validation_data=(X_val, y_val))
+
+# Evaluate the model
+test_loss, test_mae = model.evaluate(X_test, y_test)
+print(f'Test MAE: {test_mae:.4f}')
+
+# Function to predict heart rate and respiratory rate
+def predict_vital_signs(model, video_path):
+    frames = preprocess_video(video_path)
+    predictions = model.predict(frames)
+    heart_rate, respiratory_rate = predictions[:, 0], predictions[:, 1]
+    return heart_rate, respiratory_rate
+
+# Example usage: predict vital signs for a new video
+video_path = 'path/to/new_video.mp4'
+heart_rate, respiratory_rate = predict_vital_signs(model, video_path)
+print(f'Predicted Heart Rate: {heart_rate}')
+print(f'Predicted Respiratory Rate: {respiratory_rate}')

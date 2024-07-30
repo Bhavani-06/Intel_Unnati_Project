@@ -1,122 +1,106 @@
-#install libraries
+!pip install -U tensorflow
+!pip install -U tensorflow-gpu
+!pip install tf_slim
+!pip install pycocotools
+!pip install lvis
+!pip install Cython
+!pip install contextlib2
+!pip install matplotlib
+!pip install pillow
+!pip install lxml
+!pip install jupyter
+!pip install pandas
+!pip install opencv-python-headless
 
-pip install opencv-python tensorflow numpy scipy scikit-learn
+!git clone https://github.com/tensorflow/models.git
 
-#main code
+%cd /content/models/research/
+!protoc object_detection/protos/*.proto --python_out=.
+
+!cp object_detection/packages/tf2/setup.py .
+!python -m pip install .
+
+!wget http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mobilenet_v2_fpnlite_320x320_coco17_tpu-8.tar.gz
+
+!tar -xzvf ssd_mobilenet_v2_fpnlite_320x320_coco17_tpu-8.tar.gz
+
+!ls ssd_mobilenet_v2_fpnlite_320x320_coco17_tpu-8
+
+from google.colab import files
+
+# Upload the TFRecord files
+uploaded = files.upload()
+
+# Move the uploaded files to a directory
+import os
+os.makedirs('/content/tfrecords', exist_ok=True)
+for filename in uploaded.keys():
+    os.rename(filename, f"/content/tfrecords/{filename}")
+
+# Upload the label map file
+uploaded = files.upload()
+
+# Move the uploaded file to the correct directory
+for filename in uploaded.keys():
+    os.rename(filename, f"/content/{filename}")
+
+# List the contents of the directory to verify
+!ls /content/tfrecords
+!ls /content
+
+!wget http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mobilenet_v2_fpnlite_320x320_coco17_tpu-8.tar.gz
+!tar -xzvf ssd_mobilenet_v2_fpnlite_320x320_coco17_tpu-8.tar.gz
+
+!ls ssd_mobilenet_v2_fpnlite_320x320_coco17_tpu-8
+
+import re
+
+# Path to your pipeline configuration file
+config_path = '/content/ssd_mobilenet_v2_fpnlite_320x320_coco17_tpu-8/pipeline.config'
+
+# Check if the file exists
+if not os.path.exists(config_path):
+    raise FileNotFoundError(f"The configuration file was not found at {config_path}")
+
+# Read the configuration file
+with open(config_path, 'r') as file:
+    config = file.read()
+
+# Edit the configuration file
+config = re.sub('PATH_TO_BE_CONFIGURED/model.ckpt', '/content/ssd_mobilenet_v2_fpnlite_320x320_coco17_tpu-8/checkpoint/ckpt-0', config)
+config = re.sub('PATH_TO_BE_CONFIGURED/label_map.pbtxt', '/content/label_map.pbtxt', config)
+config = re.sub('PATH_TO_BE_CONFIGURED/train.record', '/content/tfrecords/train.record', config)
+config = re.sub('PATH_TO_BE_CONFIGURED/test.record', '/content/tfrecords/test.record', config)
+
+# Write the changes back to the configuration file
+with open(config_path, 'w') as file:
+    file.write(config)
+
+# Verify the changes
+with open(config_path, 'r') as file:
+    print(file.read())
 
 import os
-import cv2
-import numpy as np
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, LSTM, TimeDistributed, Dropout
-from tensorflow.keras.optimizers import Adam
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+os.environ['PYTHONPATH'] += ':/content/models:/content/models/research:/content/models/research/slim'
 
-# Set seed for reproducibility
-np.random.seed(42)
-tf.random.set_seed(42)
+!git clone https://github.com/tensorflow/models.git
 
-# Function to extract frames from video
-def extract_frames(video_path, output_folder):
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-    cap = cv2.VideoCapture(video_path)
-    count = 0
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame_path = os.path.join(output_folder, f'frame_{count:04d}.jpg')
-        cv2.imwrite(frame_path, frame)
-        count += 1
-    cap.release()
+%cd models/research
 
-# Example usage: extract frames from a video
-video_path = 'path/to/video.mp4'
-output_folder = 'output_frames'
-extract_frames(video_path, output_folder)
+!pip install tensorflow tensorflow_io
+!pip install tf_slim
+!pip install pycocotools
+!pip install lvis
+!pip install scipy
 
-# Function to preprocess frames
-def preprocess_frame(frame):
-    frame = cv2.resize(frame, (224, 224))
-    frame = frame / 255.0
-    return frame
+!protoc object_detection/protos/*.proto --python_out=.
 
-# Load and preprocess dataset
-def load_and_preprocess_data(data_folder):
-    X, y = [], []
-    for frame_file in sorted(os.listdir(data_folder)):
-        if frame_file.endswith('.jpg'):
-            frame_path = os.path.join(data_folder, frame_file)
-            frame = cv2.imread(frame_path)
-            frame = preprocess_frame(frame)
-            X.append(frame)
-            # Assuming labels are stored in corresponding .npy files
-            label_file = frame_file.replace('.jpg', '.npy')
-            label_path = os.path.join(data_folder, label_file)
-            if os.path.exists(label_path):
-                label = np.load(label_path)
-                y.append(label)
-    return np.array(X), np.array(y)
+!cp object_detection/packages/tf2/setup.py .
+!python -m pip install .
 
-# Load data
-X, y = load_and_preprocess_data(output_folder)
+!python object_detection/builders/model_builder_tf2_test.py
 
-# Data augmentation
-datagen = ImageDataGenerator(
-    rotation_range=10,
-    width_shift_range=0.1,
-    height_shift_range=0.1,
-    shear_range=0.1,
-    zoom_range=0.1,
-    horizontal_flip=True,
-    fill_mode='nearest'
-)
-
-# Example train-test split
-X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.3, random_state=42)
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42)
-
-# Define the model
-def build_model(input_shape):
-    model = Sequential([
-        TimeDistributed(Conv2D(32, (3, 3), activation='relu'), input_shape=input_shape),
-        TimeDistributed(MaxPooling2D((2, 2))),
-        TimeDistributed(Conv2D(64, (3, 3), activation='relu')),
-        TimeDistributed(MaxPooling2D((2, 2))),
-        TimeDistributed(Flatten()),
-        LSTM(50, return_sequences=True),
-        Dropout(0.5),
-        LSTM(50),
-        Dense(2, activation='linear')  # Output layer for heart rate and respiratory rate
-    ])
-    return model
-
-input_shape = (None, 224, 224, 3)  # (timesteps, height, width, channels)
-model = build_model(input_shape)
-model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error', metrics=['mae'])
-
-# Model summary
-model.summary()
-
-# Train the model
-history = model.fit(X_train, y_train, epochs=50, batch_size=8, validation_data=(X_val, y_val))
-
-# Evaluate the model
-test_loss, test_mae = model.evaluate(X_test, y_test)
-print(f'Test MAE: {test_mae:.4f}')
-
-# Function to predict heart rate and respiratory rate
-def predict_vital_signs(model, video_path):
-    frames = preprocess_video(video_path)
-    predictions = model.predict(frames)
-    heart_rate, respiratory_rate = predictions[:, 0], predictions[:, 1]
-    return heart_rate, respiratory_rate
-
-# Example usage: predict vital signs for a new video
-video_path = 'path/to/new_video.mp4'
-heart_rate, respiratory_rate = predict_vital_signs(model, video_path)
-print(f'Predicted Heart Rate: {heart_rate}')
-print(f'Predicted Respiratory Rate: {respiratory_rate}')
+!python models/research/object_detection/model_main_tf2.py \
+    --pipeline_config_path=/content/ssd_mobilenet_v2_fpnlite_320x320_coco17_tpu-8/pipeline.config \
+    --model_dir=/content/training \
+    --alsologtostderr
